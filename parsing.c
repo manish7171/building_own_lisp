@@ -2,25 +2,22 @@
 
 int main(int argc, char** argv) {
 
-  mpc_parser_t* Adjective = mpc_new("adjective");
-  mpc_parser_t* Noun      = mpc_new("noun");
-  mpc_parser_t* Phrase    = mpc_new("phrase");
-  mpc_parser_t* Doge      = mpc_new("doge");
+  mpc_parser_t* Number = mpc_new("number");
+  mpc_parser_t* Operator      = mpc_new("operator");
+  mpc_parser_t* Expr    = mpc_new("expr");
+  mpc_parser_t* Lispy      = mpc_new("lispy");
 
-  mpca_lang(MPCA_LANG_DEFAULT,
-    "                                           \
-      adjective : \"wow\" | \"many\"            \
-                |  \"so\" | \"such\";           \
-      noun      : \"lisp\" | \"language\"       \
-                | \"book\" | \"build\" | \"c\"; \
-      phrase    : <adjective> <noun>;           \
-      doge      : <phrase>*;                    \
-    ",
-    Adjective, Noun, Phrase, Doge);
+/* Define them with the following Language */
+mpca_lang(MPCA_LANG_DEFAULT,
+  "                                                     \
+    number   : /-?[0-9]+/ ;                             \
+    operator : '+' | '-' | '*' | '/' ;                  \
+    expr     : <number> | '(' <operator> <expr>+ ')' ;  \
+    lispy    : /^/ <operator> <expr>+ /$/ ;             \
+  ",
+  Number, Operator, Expr, Lispy);
 
-  /* Do some parsing here... */
-
-  mpc_cleanup(4, Adjective, Noun, Phrase, Doge);
+  mpc_cleanup(4, Number, Operator, Expr, Lispy);
   
   return 0;
   
