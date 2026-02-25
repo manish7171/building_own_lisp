@@ -28,14 +28,17 @@ void add_history(char *unused) {}
 #include <readline/readline.h>
 #endif
 
+typedef enum  { LVAL_NUM, LVAL_ERR } lval_type;
+typedef enum  { LERR_DIV_ZERO, LERR_BAD_OP, LERR_BAD_NUM } error;
+
 typedef struct {
   int type;
-  long num;
-  int err;
+  union {
+    long num;
+    error err;
+  };
 } lval;
 
-enum { LVAL_NUM, LVAL_ERR };
-enum { LERR_DIV_ZERO, LERR_BAD_OP, LERR_BAD_NUM };
 
 lval lval_num(long x) {
   lval v;
@@ -77,10 +80,10 @@ void lval_println(lval v) {
 }
 
 lval eval_op(lval x, char *op, lval y) {
-  if (x.err == LVAL_ERR) {
+  if (x.type == LVAL_ERR) {
     return x;
   };
-  if (y.err == LVAL_ERR) {
+  if (y.type == LVAL_ERR) {
     return y;
   };
   if (strcmp(op, "+") == 0) {
@@ -94,6 +97,10 @@ lval eval_op(lval x, char *op, lval y) {
   }
   if (strcmp(op, "/") == 0) {
     return y.num == 0 ? lval_err(LERR_DIV_ZERO) : lval_num(x.num / y.num);
+  }
+
+  if (strcmp(op, "%") == 0) {
+    return y.num == 0 ? lval_err(LERR_DIV_ZERO) : lval_num(x.num % y.num);
   }
 
   return lval_err(LERR_BAD_OP);
@@ -129,7 +136,7 @@ int main(int argc, char **argv) {
   mpca_lang(MPCA_LANG_DEFAULT,
             "                                                     \
     number   : /-?[0-9]+/ ;                             \
-    operator : '+' | '-' | '*' | '/' ;                  \
+    operator : '+' | '-' | '*' | '/' | '%';                  \
     expr     : <number> | '(' <operator> <expr>+ ')' ;  \
     lispy    : /^/ <operator> <expr>+ /$/ ;             \
   ",
