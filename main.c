@@ -28,22 +28,29 @@ void add_history(char *unused) {}
 #include <readline/readline.h>
 #endif
 
-typedef enum  { LVAL_NUM, LVAL_ERR } lval_type;
-typedef enum  { LERR_DIV_ZERO, LERR_BAD_OP, LERR_BAD_NUM } error;
+typedef enum { LVAL_NUM, LVAL_DEC, LVAL_ERR } lval_type;
+typedef enum { LERR_DIV_ZERO, LERR_BAD_OP, LERR_BAD_NUM } lerr;
 
 typedef struct {
   int type;
   union {
     long num;
-    error err;
+    double dec;
+    lerr err;
   };
 } lval;
-
 
 lval lval_num(long x) {
   lval v;
   v.type = LVAL_NUM;
   v.num = x;
+  return v;
+}
+
+lval lval_dec(double x) {
+  lval v;
+  v.type = LVAL_DEC;
+  v.dec = x;
   return v;
 }
 
@@ -58,6 +65,10 @@ void lval_print(lval v) {
   switch (v.type) {
   case LVAL_NUM:
     printf("%li", v.num);
+    break;
+
+  case LVAL_DEC:
+    printf("%f", v.dec);
     break;
 
   case LVAL_ERR:
@@ -86,6 +97,25 @@ lval eval_op(lval x, char *op, lval y) {
   if (y.type == LVAL_ERR) {
     return y;
   };
+
+  if (x.type == LVAL_DEC || y.type == LVAL_DEC) {
+    double a = (x.type == LVAL_DEC) ? x.dec : (double)x.num;
+    double b = (y.type == LVAL_DEC) ? y.dec : (double)y.num;
+    if (strcmp(op, "+") == 0) {
+      return lval_dec(a + b);
+    }
+    if (strcmp(op, "-") == 0) {
+      return lval_dec(a - b);
+    }
+    if (strcmp(op, "*") == 0) {
+      return lval_dec(a * b);
+    }
+    if (strcmp(op, "/") == 0) {
+      return y.dec == 0.0 ? lval_err(LERR_DIV_ZERO) : lval_dec(a / b);
+    }
+
+    return lval_err(LERR_BAD_OP);
+  }
   if (strcmp(op, "+") == 0) {
     return lval_num(x.num + y.num);
   }
@@ -107,6 +137,11 @@ lval eval_op(lval x, char *op, lval y) {
 }
 
 lval eval(mpc_ast_t *t) {
+  if (strstr(t->tag, "decimal")) {
+    errno = 0;
+    double x = strtod(t->contents, NULL);
+    return errno != ERANGE ? lval_dec(x) : lval_err(LERR_BAD_NUM);
+  }
   if (strstr(t->tag, "number")) {
     errno = 0;
     long x = strtol(t->contents, NULL, 10);
@@ -128,6 +163,7 @@ lval eval(mpc_ast_t *t) {
 
 int main(int argc, char **argv) {
   mpc_parser_t *Number = mpc_new("number");
+  mpc_parser_t *Decimal = mpc_new("decimal");
   mpc_parser_t *Operator = mpc_new("operator");
   mpc_parser_t *Expr = mpc_new("expr");
   mpc_parser_t *Lispy = mpc_new("lispy");
@@ -136,11 +172,12 @@ int main(int argc, char **argv) {
   mpca_lang(MPCA_LANG_DEFAULT,
             "                                                     \
     number   : /-?[0-9]+/ ;                             \
+    decimal  : /-?[0-9]+\\.[0-9]+/ ;           \
     operator : '+' | '-' | '*' | '/' | '%';                  \
-    expr     : <number> | '(' <operator> <expr>+ ')' ;  \
+    expr     : <decimal> | <number> | '(' <operator> <expr>+ ')' ;  \
     lispy    : /^/ <operator> <expr>+ /$/ ;             \
   ",
-            Number, Operator, Expr, Lispy);
+            Number, Decimal, Operator, Expr, Lispy);
 
   puts("Lispy Version 0.0.0.0.1");
   puts("Press Ctrl+c to Exit\n");
@@ -162,6 +199,6 @@ int main(int argc, char **argv) {
     free(input);
   }
 
-  mpc_cleanup(4, Number, Operator, Expr, Lispy);
+  mpc_cleanup(5, Number, Decimal,  Operator, Expr, Lispy);
   return 0;
 }
