@@ -537,8 +537,8 @@ lval *lval_join(lenv *e, lval *x, lval *y) {
 
 lval *builtin_op(lenv *e, lval *a, char *op);
 
-lval *builtin(lenv *e, lval *a, char *func) {
-  if (strcmp("list", func) == 0) {
+lval *builtin(lenv *e, lval *a, char *builtin) {
+  if (strcmp("list", builtin) == 0) {
     return builtin_list(e, a);
   }
   if (strcmp("head", func) == 0) {
