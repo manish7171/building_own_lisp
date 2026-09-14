@@ -34,6 +34,15 @@ void add_history(char *unused) {}
     lval_err(err);                                                             \
   }
 
+#define LASSERT_ARGS_NUM(args, cond)                                               \
+    LASSERT(args, cond, "Function 'head' passed too many arguments!"); \
+
+#define LASSERT_ARGS_TYPE(args, cond)                                               \
+    LASSERT(args, cond, "Function passed incorrect type!"); \
+
+#define LASSERT_EMPTY(args, cond)                                               \
+    LASSERT(args, cond, "Function 'head' passed {}!"); \
+
 enum { LVAL_ERR, LVAL_NUM, LVAL_SYM, LVAL_SEXPR, LVAL_QEXPR };
 
 struct lval {
@@ -141,12 +150,13 @@ struct lval *lval_pop(struct lval *v, int i) {
 
 struct lval *builtin_head(struct lval *v) {
   // check error conditions
-
-  LASSERT(v, v->count == 1, "Function 'head' passed too many arguments!");
-  LASSERT(v, v->cell[0]->type == LVAL_QEXPR,
-          "Function 'head' passed incorrect type!");
-  LASSERT(v, v->cell[0]->count != 0, "Function 'head' passed {}!");
-
+  //LASSERT(v, v->count == 1, "Function 'head' passed too many arguments!");
+  LASSERT_ARGS_NUM(v, v->count == 1);
+  LASSERT_ARGS_TYPE(v, v->cell[0]->type == LVAL_QEXPR);
+  //LASSERT(v, v->cell[0]->type == LVAL_QEXPR,
+  //        "Function 'head' passed incorrect type!");
+  //LASSERT(v, v->cell[0]->count != 0, "Function 'head' passed {}!");
+  LASSERT_EMPTY(v, v->cell[0]->count != 0);
   // otherwise take the first argument
   struct lval *a = lval_take(v, 0);
   while (a->count > 1) {
@@ -157,11 +167,14 @@ struct lval *builtin_head(struct lval *v) {
 }
 
 struct lval *builtin_tail(struct lval *v) {
-  LASSERT(v, v->count == 1, "Function 'tail' passed too many arguments!");
-  LASSERT(v, v->cell[0]->type == LVAL_QEXPR,
-          "Function 'tail' passed too many arguments!");
-  LASSERT(v, v->cell[0]->count != 0, "Function 'tail' passed {}!");
 
+  LASSERT_ARGS_NUM(v, v->count == 1);
+  LASSERT_ARGS_TYPE(v, v->cell[0]->type == LVAL_QEXPR);
+  //LASSERT(v, v->count == 1, "Function 'tail' passed too many arguments!");
+  //LASSERT(v, v->cell[0]->type == LVAL_QEXPR,
+  //       "Function 'tail' passed too many arguments!");
+  //LASSERT(v, v->cell[0]->count != 0, "Function 'tail' passed {}!");
+  LASSERT_EMPTY(v, v->cell[0]->count != 0);
   struct lval *a = lval_take(v, 0);
   lval_del(lval_pop(a, 0));
   return a;
@@ -173,9 +186,11 @@ struct lval *builtin_list(struct lval *v) {
 }
 
 struct lval *builtin_eval(struct lval *v) {
-  LASSERT(v, v->count == 1, "Function 'eval' passed too many arguments!");
-  LASSERT(v, v->cell[0]->type == LVAL_QEXPR,
-          "Function 'eval' passed too many arguments!");
+  //LASSERT(v, v->count == 1, "Function 'eval' passed too many arguments!");
+  LASSERT_ARGS_NUM(v, v->count == 1);
+  LASSERT_ARGS_TYPE(v, v->cell[0]->type == LVAL_QEXPR);
+  //LASSERT(v, v->cell[0]->type == LVAL_QEXPR,
+  //        "Function 'eval' passed too many arguments!");
 
   struct lval *x = lval_take(v, 0);
   x->type = LVAL_SEXPR;
@@ -195,8 +210,9 @@ struct lval *lval_join(struct lval *x, struct lval *y) {
 
 struct lval *builtin_join(struct lval *a) {
   for (int i = 0; i < a->count; ++i) {
-    LASSERT(a, a->cell[i]->type == LVAL_QEXPR,
-            "Function 'join' passed incorrect type!");
+    LASSERT_ARGS_TYPE(a, a->cell[0]->type == LVAL_QEXPR);
+    //LASSERT(a, a->cell[i]->type == LVAL_QEXPR,
+    //        "Function 'join' passed incorrect type!");
   }
 
   struct lval *x = lval_pop(a, 0);
@@ -252,6 +268,30 @@ struct lval *builtin_op(struct lval *v, char *op) {
   return x;
 }
 
+struct lval* lval_add_front(struct lval* q, struct lval* v) {
+  q->count++;
+  q->cell = realloc(q->cell, sizeof(struct lval *) * q->count);
+  memmove(&q->cell[1], &q->cell[0], sizeof(struct lval*) * (q->count - 1));
+  q->cell[0] = v;
+  return q;
+}
+
+struct lval* builtin_cons(struct lval* x) {
+  LASSERT_ARGS_TYPE(x->cell[1], x->cell[1]->type == LVAL_QEXPR);
+  /*x->cell[1]->cell = realloc(x->cell[1]->cell, sizeof(struct lval *) * (x->cell[1]->count + 1));
+  memmove(&x->cell[1]->cell[1], &x->cell[1]->cell[0],
+          sizeof(struct lval *) * (x->cell[1]->count));
+  x->cell[1]->cell[0] = x->cell[0];
+  x->cell[1]->count++;
+  struct lval* r = x->cell[1]; */
+
+  struct lval* v = lval_pop(x, 0);
+  struct lval* q = lval_pop(x, 0);
+  q = lval_add_front(q, v);
+  lval_del(x);
+  return q;
+}
+
 struct lval *builtin(struct lval *a, char *func) {
   if (strcmp("list", func) == 0) {
     return builtin_list(a);
@@ -264,6 +304,9 @@ struct lval *builtin(struct lval *a, char *func) {
   }
   if (strcmp("join", func) == 0) {
     return builtin_join(a);
+  }
+  if (strcmp("cons", func) == 0) {
+    return builtin_cons(a);
   }
   if (strcmp("eval", func) == 0) {
     return builtin_eval(a);
@@ -429,7 +472,7 @@ int main(int argc, char **argv) {
             "                                                   \
             number   : /-?[0-9]+/ ;                             \
             symbol   : \"list\" | \"head\" | \"tail\" | \"join\" \
-                        | \"eval\" |'+' | '-' | '*' | '/' ;                  \
+                        | \"cons\" | \"eval\" |'+' | '-' | '*' | '/' ;                  \
             sexpr    : '(' <expr>* ')';                         \
             qexpr    : '{' <expr>* '}';                         \
             expr     : <number> | <symbol> | <sexpr> | <qexpr>;           \

@@ -113,7 +113,7 @@ struct lval* lval_pop(struct lval* v, int i);
 struct lval* lval_take(struct lval* v, int i) {
     struct lval* e = lval_pop(v, i);
     lval_del(v);
-    return e;
+    return v;
 }
 
 struct lval* lval_pop(struct lval* v, int i) {
