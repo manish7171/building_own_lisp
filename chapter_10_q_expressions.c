@@ -276,6 +276,19 @@ struct lval* lval_add_front(struct lval* q, struct lval* v) {
   return q;
 }
 
+struct lval* builtin_len(struct lval* x) {
+    LASSERT_ARGS_TYPE(x->cell[1], x->cell[1]->type == LVAL_QEXPR);
+
+    return lval_num(x->cell[0]->count);
+}
+
+struct lval* builtin_init(struct lval* x) {
+    LASSERT_ARGS_TYPE(x->cell[1], x->cell[1]->type == LVAL_QEXPR);
+    struct lval* v = lval_pop(x->cell[0], ((x->cell[0]->count-1)));
+    lval_del(v);
+    return x;
+}
+
 struct lval* builtin_cons(struct lval* x) {
   LASSERT_ARGS_TYPE(x->cell[1], x->cell[1]->type == LVAL_QEXPR);
   /*x->cell[1]->cell = realloc(x->cell[1]->cell, sizeof(struct lval *) * (x->cell[1]->count + 1));
@@ -308,6 +321,13 @@ struct lval *builtin(struct lval *a, char *func) {
   if (strcmp("cons", func) == 0) {
     return builtin_cons(a);
   }
+  if (strcmp("len", func) == 0) {
+    return builtin_len(a);
+  }
+  if (strcmp("init", func) == 0) {
+      return builtin_init(a);
+  }
+
   if (strcmp("eval", func) == 0) {
     return builtin_eval(a);
   }
@@ -472,7 +492,7 @@ int main(int argc, char **argv) {
             "                                                   \
             number   : /-?[0-9]+/ ;                             \
             symbol   : \"list\" | \"head\" | \"tail\" | \"join\" \
-                        | \"cons\" | \"eval\" |'+' | '-' | '*' | '/' ;                  \
+                        | \"init\" | \"len\" | \"cons\" | \"eval\" |'+' | '-' | '*' | '/' ;                  \
             sexpr    : '(' <expr>* ')';                         \
             qexpr    : '{' <expr>* '}';                         \
             expr     : <number> | <symbol> | <sexpr> | <qexpr>;           \
