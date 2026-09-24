@@ -283,10 +283,12 @@ struct lval* builtin_len(struct lval* x) {
 }
 
 struct lval* builtin_init(struct lval* x) {
-    LASSERT_ARGS_TYPE(x->cell[1], x->cell[1]->type == LVAL_QEXPR);
-    struct lval* v = lval_pop(x->cell[0], ((x->cell[0]->count-1)));
+    LASSERT_ARGS_TYPE(x->cell[0], x->cell[0]->type == LVAL_QEXPR);
+    struct lval* q = lval_pop(x, 0);
+    struct lval* v = lval_pop(q, q->count - 1 );
     lval_del(v);
-    return x;
+    lval_del(x);
+    return q;
 }
 
 struct lval* builtin_cons(struct lval* x) {
