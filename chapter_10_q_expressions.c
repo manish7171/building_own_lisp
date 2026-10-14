@@ -293,13 +293,6 @@ struct lval* builtin_init(struct lval* x) {
 
 struct lval* builtin_cons(struct lval* x) {
   LASSERT_ARGS_TYPE(x->cell[1], x->cell[1]->type == LVAL_QEXPR);
-  /*x->cell[1]->cell = realloc(x->cell[1]->cell, sizeof(struct lval *) * (x->cell[1]->count + 1));
-  memmove(&x->cell[1]->cell[1], &x->cell[1]->cell[0],
-          sizeof(struct lval *) * (x->cell[1]->count));
-  x->cell[1]->cell[0] = x->cell[0];
-  x->cell[1]->count++;
-  struct lval* r = x->cell[1]; */
-
   struct lval* v = lval_pop(x, 0);
   struct lval* q = lval_pop(x, 0);
   q = lval_add_front(q, v);
