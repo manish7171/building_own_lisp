@@ -57,7 +57,9 @@ enum {
   LVAL_STR,
   LVAL_FUN,
   LVAL_SEXPR,
-  LVAL_QEXPR
+  LVAL_QEXPR,
+  LVAL_OK,
+  LVAL_FILE
 };
 
 /* Parser Declariations */
@@ -89,6 +91,7 @@ struct lval {
   char *err;
   char *sym;
   char *str;
+  FILE *file;
 
   /* Function */
   lbuiltin builtin;
@@ -140,13 +143,9 @@ struct lval *lval_sym(char *sym);
 struct lval *lval_func(lbuiltin fun, char *name);
 struct lval *lval_sexpr(void);
 struct lval *lval_qexpr(void);
-struct lval *lval_str(char *s) {
-  struct lval *v = malloc(sizeof(struct lval));
-  v->type = LVAL_STR;
-  v->str = malloc(strlen(s) + 1);
-  strcpy(v->str, s);
-  return v;
-}
+struct lval *lval_ok(void);
+struct lval *lval_str(char *s);
+struct lval *lval_file(FILE *f);
 
 /* Memory and list helpers */
 void lval_del(struct lval *l);
@@ -158,6 +157,7 @@ struct lval *lval_take(struct lval *v, int i);
 struct lval *lval_join(struct lval *x, struct lval *y);
 struct lval *lval_lambda(struct lval *formals, struct lval *body);
 int lval_eq(struct lval *x, struct lval *y);
+
 /* Environment */
 struct lenv *lenv_new();
 void lenv_del(struct lenv *e);
@@ -167,6 +167,7 @@ void lenv_def(struct lenv *e, struct lval *k, struct lval *v);
 void lenv_put(struct lenv *e, struct lval *k, struct lval *v);
 void lenv_add_builtin(struct lenv *e, char *name, lbuiltin func);
 void lenv_add_builtins(struct lenv *e);
+void lenv_add_file(struct lenv *e, char *name, FILE *f);
 
 /* Printing */
 void lval_print_expr(struct lval *v, char start, char end);
@@ -214,6 +215,23 @@ struct lval *builtin_if(struct lenv *e, struct lval *v);
 struct lval *builtin_or(struct lenv *e, struct lval *v);
 struct lval *builtin_and(struct lenv *e, struct lval *v);
 struct lval *builtin_not(struct lenv *e, struct lval *v);
+struct lval *builtin_read(struct lenv *e, struct lval *v);
+struct lval *builtin_show(struct lenv *e, struct lval *a);
+struct lval *builtin_fopen(struct lenv *e, struct lval *a);
+struct lval *builtin_fclose(struct lenv *e, struct lval *a);
+struct lval *builtin_fgets(struct lenv *e, struct lval *a);
+struct lval *builtin_fread(struct lenv *e, struct lval *a);
+struct lval *builtin_fgetc(struct lenv *e, struct lval *a);
+struct lval *builtin_fputs(struct lenv *e, struct lval *a);
+struct lval *builtin_fputc(struct lenv *e, struct lval *a);
+struct lval *builtin_feof(struct lenv *e, struct lval *a);
+struct lval *builtin_fflush(struct lenv *e, struct lval *a);
+struct lval *builtin_fseek(struct lenv *e, struct lval *a);
+struct lval *builtin_ftell(struct lenv *e, struct lval *a);
+struct lval *builtin_rewind(struct lenv *e, struct lval *a);
+struct lval *builtin_remove(struct lenv *e, struct lval *a);
+struct lval *builtin_rename(struct lenv *e, struct lval *a);
+
 /* Evaluation */
 struct lval *lval_eval(struct lenv *e, struct lval *t);
 struct lval *lval_eval_sexpr(struct lenv *e, struct lval *v);
@@ -234,6 +252,10 @@ char *ltype_name(int t) {
     return "Symbol";
   case LVAL_STR:
     return "String";
+  case LVAL_OK:
+    return "Ok";
+  case LVAL_FILE:
+    return "file";
   case LVAL_SEXPR:
     return "S-Expression";
   case LVAL_QEXPR:
@@ -329,6 +351,26 @@ struct lenv *lenv_new() {
   return e;
 }
 
+struct lval *lval_str(char *s) {
+  struct lval *v = malloc(sizeof(struct lval));
+  v->type = LVAL_STR;
+  v->str = malloc(strlen(s) + 1);
+  strcpy(v->str, s);
+  return v;
+}
+
+struct lval *lval_ok() {
+  struct lval *v = malloc(sizeof(struct lval));
+  v->type = LVAL_OK;
+  return v;
+}
+
+struct lval *lval_file(FILE *f) {
+  struct lval *v = malloc(sizeof(struct lval));
+  v->type = LVAL_FILE;
+  v->file = f;
+  return v;
+}
 /* ----- Memory and list helpers ----- */
 
 void lval_del(struct lval *l) {
@@ -351,6 +393,10 @@ void lval_del(struct lval *l) {
     break;
   case LVAL_ERR:
     free(l->err);
+    break;
+  case LVAL_OK:
+    break;
+  case LVAL_FILE:
     break;
   case LVAL_SEXPR:
   case LVAL_QEXPR:
@@ -397,6 +443,11 @@ struct lval *lval_copy(struct lval *v) {
   case LVAL_STR:
     x->str = malloc(strlen(v->str) + 1);
     strcpy(x->str, v->str);
+    break;
+  case LVAL_OK:
+    break;
+  case LVAL_FILE:
+    x->file = v->file;
     break;
   case LVAL_SEXPR:
   case LVAL_QEXPR:
@@ -590,6 +641,12 @@ int lval_eq(struct lval *x, struct lval *y) {
     } else {
       return lval_eq(x->formals, y->formals) && lval_eq(x->formals, y->formals);
     }
+
+  case LVAL_OK:
+    break;
+
+  case LVAL_FILE:
+    return x->file == y->file;
   case LVAL_QEXPR:
   case LVAL_SEXPR:
     if (x->count != y->count) {
@@ -606,6 +663,7 @@ int lval_eq(struct lval *x, struct lval *y) {
   }
   return 0;
 }
+
 struct lval *builtin_error(struct lenv *e, struct lval *a) {
   LASSERT_ARGS_NUM("error", a, 1);
   LASSERT_ARGS_TYPE("error", a, 0, LVAL_STR);
@@ -680,6 +738,8 @@ void lenv_add_builtins(struct lenv *e) {
   lenv_add_builtin(e, "cons", builtin_cons);
   lenv_add_builtin(e, "len", builtin_len);
   lenv_add_builtin(e, "init", builtin_init);
+  lenv_add_builtin(e, "read", builtin_read);
+  lenv_add_builtin(e, "show", builtin_show);
   lenv_add_builtin(e, "\\", builtin_lambda);
   lenv_add_builtin(e, "if", builtin_if);
   lenv_add_builtin(e, "||", builtin_or);
@@ -705,8 +765,34 @@ void lenv_add_builtins(struct lenv *e) {
   lenv_add_builtin(e, "load", builtin_load);
   lenv_add_builtin(e, "error", builtin_error);
   lenv_add_builtin(e, "print", builtin_print);
+/* File functions */
+  lenv_add_builtin(e, "fopen", builtin_fopen);
+  lenv_add_builtin(e, "fclose", builtin_fclose);
+  lenv_add_builtin(e, "fgets", builtin_fgets);
+  lenv_add_builtin(e, "fread", builtin_fread);
+  lenv_add_builtin(e, "fgetc", builtin_fgetc);
+  lenv_add_builtin(e, "fputs", builtin_fputs);
+  lenv_add_builtin(e, "fputc", builtin_fputc);
+  lenv_add_builtin(e, "feof", builtin_feof);
+  lenv_add_builtin(e, "fflush", builtin_fflush);
+  lenv_add_builtin(e, "fseek", builtin_fseek);
+  lenv_add_builtin(e, "ftell", builtin_ftell);
+  lenv_add_builtin(e, "rewind", builtin_rewind);
+  lenv_add_builtin(e, "remove", builtin_remove);
+  lenv_add_builtin(e, "rename", builtin_rename);
+
+  lenv_add_file(e, "stdin", stdin);
+  lenv_add_file(e, "stdout", stdout);
+  lenv_add_file(e, "stderr", stderr);
 }
 
+void lenv_add_file(struct lenv *e, char *name, FILE *f) {
+  struct lval *k = lval_sym(name);
+  struct lval *v = lval_file(f);
+  lenv_put(e, k, v);
+  lval_del(k);
+  lval_del(v);
+}
 /* ----- Printing ----- */
 
 void lval_print_expr(struct lval *v, char start, char end) {
@@ -745,6 +831,12 @@ void lval_print(struct lval *v) {
       putchar(')');
     }
     break;
+  case LVAL_OK:
+    printf("%s", "Ok");
+    break;
+  case LVAL_FILE:
+    printf("<file>");
+    break;
   case LVAL_QEXPR:
     lval_print_expr(v, '{', '}');
     break;
@@ -782,7 +874,7 @@ struct lval *builtin_print(struct lenv *e, struct lval *a) {
   putchar('\n');
   lval_del(a);
 
-  return lval_sexpr();
+  return lval_ok();
 }
 
 /* ----- Reading (AST -> lval) ----- */
@@ -929,8 +1021,8 @@ struct lval *builtin_list(struct lenv *e, struct lval *v) {
 
 struct lval *builtin_head(struct lenv *e, struct lval *v) {
   LASSERT_ARGS_NUM("head", v, 1);
-  //LASSERT_ARGS_TYPE("head", v, 0, LVAL_QEXPR);
-  //LASSERT_EMPTY("head", v, 0);
+  // LASSERT_ARGS_TYPE("head", v, 0, LVAL_QEXPR);
+  // LASSERT_EMPTY("head", v, 0);
   /* The first argument decides what we are joining */
   int type = v->cell[0]->type;
   LASSERT(v, type == LVAL_QEXPR || type == LVAL_STR,
@@ -1129,6 +1221,238 @@ struct lval *builtin_not(struct lenv *e, struct lval *a) {
   return lval_num(x);
 }
 
+struct lval *builtin_read(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("read", a, 1);
+  LASSERT_ARGS_TYPE("read", a, 0, LVAL_STR);
+
+  mpc_result_t r;
+  if (mpc_parse("<string>", a->cell[0]->str, Lispy, &r)) {
+    struct lval *expr = lval_read(r.output);
+    mpc_ast_delete(r.output);
+    expr->type = LVAL_QEXPR;
+    lval_del(a);
+    return expr;
+  } else {
+    char *err_msg = mpc_err_string(r.error);
+    mpc_err_delete(r.error);
+
+    struct lval *err = lval_err("Could not read string %s", err_msg);
+    free(err_msg);
+    lval_del(a);
+    return err;
+  }
+}
+
+struct lval *builtin_show(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("show", a, 1);
+  LASSERT_ARGS_TYPE("show", a, 0, LVAL_STR);
+  printf("%s", a->cell[0]->str);
+  lval_del(a);
+  return lval_ok();
+}
+
+struct lval *builtin_fopen(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("fopen", a, 2);
+  LASSERT_ARGS_TYPE("fopen", a, 0, LVAL_STR);
+  LASSERT_ARGS_TYPE("fopen", a, 1, LVAL_STR);
+
+  FILE *f = fopen(a->cell[0]->str, a->cell[1]->str);
+
+  if (!f) {
+    struct lval *err =
+        lval_err("Could not open '%s': '%s', a->cell[0]->str, strerror(errno)");
+    lval_del(a);
+    return err;
+  }
+  lval_del(a);
+  return lval_file(f);
+}
+
+struct lval *builtin_fclose(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("fclose", a, 1);
+  LASSERT_ARGS_TYPE("fclose", a, 0, LVAL_FILE);
+
+  int r = fclose(a->cell[0]->file);
+  lval_del(a);
+
+  if (!r) {
+    return lval_err("Could not close file: %s', strerror(errno)");
+  }
+
+  return lval_ok();
+}
+
+/* Reads at most n-1 characters, stopping after a newline.
+   Returns "" at end of file. */
+struct lval *builtin_fgets(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("fgets", a, 2);
+  LASSERT_ARGS_TYPE("fgets", a, 0, LVAL_FILE);
+  LASSERT_ARGS_TYPE("fgets", a, 1, LVAL_NUM);
+  long n = a->cell[1]->num;
+  LASSERT(a, n > 1, "Function 'fgets' passed size %li, expected at least 2.",
+          n);
+
+  FILE *f = a->cell[0]->file;
+  char *buf = malloc(n);
+  struct lval *res;
+
+  if (fgets(buf, n, f)) {
+    res = lval_str(buf);
+  } else if (ferror(f)) {
+    res = lval_err("Could not read from file: %s", strerror(errno));
+  } else {
+    res = lval_str("");
+  }
+  free(buf);
+  lval_del(a);
+  return res;
+}
+
+/* Reads up to n bytes. Returns "" at end of file. */
+struct lval *builtin_fread(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("fread", a, 2);
+  LASSERT_ARGS_TYPE("fread", a, 0, LVAL_FILE);
+  LASSERT_ARGS_TYPE("fread", a, 1, LVAL_NUM);
+  long n = a->cell[1]->num;
+  LASSERT(a, n > 0, "Function 'fread' passed size %li, expected at least 1.",
+          n);
+
+  FILE *f = a->cell[0]->file;
+  char *buf = malloc(n + 1);
+  size_t got = fread(buf, 1, n, f);
+  buf[got] = '\0';
+
+  struct lval *res;
+  if (got == 0 && ferror(f)) {
+    res = lval_err("Could not read from file: %s", strerror(errno));
+  } else {
+    res = lval_str(buf);
+  }
+  free(buf);
+  lval_del(a);
+  return res;
+}
+
+/* Returns the character code, or -1 at end of file. */
+struct lval *builtin_fgetc(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("fgetc", a, 1);
+  LASSERT_ARGS_TYPE("fgetc", a, 0, LVAL_FILE);
+  int c = fgetc(a->cell[0]->file);
+  lval_del(a);
+  return lval_num(c);
+}
+
+struct lval *builtin_fputs(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("fputs", a, 2);
+  LASSERT_ARGS_TYPE("fputs", a, 0, LVAL_FILE);
+  LASSERT_ARGS_TYPE("fputs", a, 1, LVAL_STR);
+
+  int r = fputs(a->cell[1]->str, a->cell[0]->file);
+  int saved = errno;
+  lval_del(a);
+  if (r == EOF)
+    return lval_err("Could not write to file: %s", strerror(saved));
+  return lval_ok();
+}
+
+struct lval *builtin_fputc(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("fputc", a, 2);
+  LASSERT_ARGS_TYPE("fputc", a, 0, LVAL_FILE);
+  LASSERT_ARGS_TYPE("fputc", a, 1, LVAL_NUM);
+
+  int r = fputc((int)a->cell[1]->num, a->cell[0]->file);
+  int saved = errno;
+  lval_del(a);
+  if (r == EOF)
+    return lval_err("Could not write to file: %s", strerror(saved));
+  return lval_ok();
+}
+
+struct lval *builtin_feof(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("feof", a, 1);
+  LASSERT_ARGS_TYPE("feof", a, 0, LVAL_FILE);
+  int r = feof(a->cell[0]->file) != 0;
+  lval_del(a);
+  return lval_num(r);
+}
+
+struct lval *builtin_fflush(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("fflush", a, 1);
+  LASSERT_ARGS_TYPE("fflush", a, 0, LVAL_FILE);
+  int r = fflush(a->cell[0]->file);
+  int saved = errno;
+  lval_del(a);
+  if (r != 0)
+    return lval_err("Could not flush file: %s", strerror(saved));
+  return lval_ok();
+}
+
+/* whence: 0 = from start, 1 = from current position, 2 = from end */
+struct lval *builtin_fseek(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("fseek", a, 3);
+  LASSERT_ARGS_TYPE("fseek", a, 0, LVAL_FILE);
+  LASSERT_ARGS_TYPE("fseek", a, 1, LVAL_NUM);
+  LASSERT_ARGS_TYPE("fseek", a, 2, LVAL_NUM);
+  long w = a->cell[2]->num;
+  LASSERT(a, w >= 0 && w <= 2,
+          "Function 'fseek' passed whence %li, expected 0, 1 or 2.", w);
+
+  int whence[] = {SEEK_SET, SEEK_CUR, SEEK_END};
+  int r = fseek(a->cell[0]->file, a->cell[1]->num, whence[w]);
+  int saved = errno;
+  lval_del(a);
+  if (r != 0)
+    return lval_err("Could not seek in file: %s", strerror(saved));
+  return lval_ok();
+}
+
+struct lval *builtin_ftell(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("ftell", a, 1);
+  LASSERT_ARGS_TYPE("ftell", a, 0, LVAL_FILE);
+  long pos = ftell(a->cell[0]->file);
+  int saved = errno;
+  lval_del(a);
+  if (pos < 0)
+    return lval_err("Could not get file position: %s", strerror(saved));
+  return lval_num(pos);
+}
+
+struct lval *builtin_rewind(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("rewind", a, 1);
+  LASSERT_ARGS_TYPE("rewind", a, 0, LVAL_FILE);
+  rewind(a->cell[0]->file);
+  lval_del(a);
+  return lval_ok();
+}
+
+struct lval *builtin_remove(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("remove", a, 1);
+  LASSERT_ARGS_TYPE("remove", a, 0, LVAL_STR);
+
+  if (remove(a->cell[0]->str) != 0) {
+    struct lval *err =
+        lval_err("Could not remove '%s': %s", a->cell[0]->str, strerror(errno));
+    lval_del(a);
+    return err;
+  }
+  lval_del(a);
+  return lval_ok();
+}
+
+struct lval *builtin_rename(struct lenv *e, struct lval *a) {
+  LASSERT_ARGS_NUM("rename", a, 2);
+  LASSERT_ARGS_TYPE("rename", a, 0, LVAL_STR);
+  LASSERT_ARGS_TYPE("rename", a, 1, LVAL_STR);
+
+  if (rename(a->cell[0]->str, a->cell[1]->str) != 0) {
+    struct lval *err =
+        lval_err("Could not rename '%s': %s", a->cell[0]->str, strerror(errno));
+    lval_del(a);
+    return err;
+  }
+  lval_del(a);
+  return lval_ok();
+}
 /* ----- Builtins: variables and system ----- */
 
 struct lval *builtin_def(struct lenv *e, struct lval *a) {
@@ -1177,7 +1501,7 @@ struct lval *builtin_var(struct lenv *e, struct lval *a, char *func) {
   }
 
   lval_del(a);
-  return lval_sexpr();
+  return lval_ok();
 }
 
 struct lval *builtin_exit(struct lenv *e, struct lval *a) {
@@ -1322,8 +1646,7 @@ struct lval *builtin_load(struct lenv *e, struct lval *a) {
     lval_del(expr);
     lval_del(a);
 
-    /* Return empty list */
-    return lval_sexpr();
+    return lval_ok();
 
   } else {
     /* Get Parse Error as String */
